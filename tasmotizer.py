@@ -38,7 +38,11 @@ class ESPWorker(QObject):
         self.command = [
                       '--chip', 'esp32',
                       '--port', port,
-                      '--baud', '115200'
+                      '--baud', '921600',
+                      '--before', 'default_reset',
+                      '--after', 'hard_reset',
+                      
+                      
             ]
 
         self._actions = actions
@@ -61,7 +65,11 @@ class ESPWorker(QObject):
 
             if esptool.sw.continueFlag() and 'write' in self._actions:
                 file_path = self._params['file_path']
-                command_write = ['write_flash', '--flash_mode', 'dout', '0x00000', file_path]
+                butloader = 'firmware/bootloader_dio_40m.bin'
+                partitions = 'firmware/partitions.bin'
+                boot = 'firmware/boot_app0.bin'
+                firmware = 'firmware/firmware.bin'
+                command_write = ['write_flash', '-z', '--flash_mode', 'dio', '--flash_freq', '40m', '--flash_size', 'detect', '0x1000', butloader, '0x8000', partitions, '0xe000', boot, '0x10000', firmware]
 
                 if 'erase' in self._actions:
                     command_write.append('--erase-all')
@@ -749,7 +757,7 @@ class Tasmotizer(QDialog):
                 #backup=self.cbBackup.isChecked(),
                 backup=False,
                 backup_size=0,#self.cbxBackupSize.currentIndex(),
-                erase=True,#self.cbErase.isChecked(),
+                erase=False,#self.cbErase.isChecked(),
                 auto_reset=True#self.cbSelfReset.isChecked()
             )
             result = process_dlg.exec_()
