@@ -21,7 +21,7 @@ import banner
 import firmwareURL
 
 from gui import HLayout, VLayout, GroupBoxH, GroupBoxV, SpinBox, dark_palette
-from utils import MODULES, NoBinFile, NetworkError
+from utils import NoBinFile, NetworkError
 
 __version__ = '0.1'
 
@@ -58,9 +58,7 @@ class ESPWorker(QObject):
 
             if esptool.sw.continueFlag() and 'write' in self._actions:
                 file_path = self._params['file_path']
-                # command_write = ['write_flash', '0x10000', file_path]
-                print(file_path)
-                command_write = ['--before','default_reset','--after','hard_reset','write_flash','-z','--flash_mode','dio','--flash_freq','80m','--flash_size','detect','0xe000','boot_app0.bin','0x1000','bootloader_dio_80m.bin','0x10000',file_path ,'0x8000','cansat-firmware.ino.partitions.bin']
+                command_write = ['--before','default_reset','--after','hard_reset','write_flash','-z','--flash_mode','dio','--flash_freq','40m','--flash_size','detect','0xe000','boot_app0.bin','0x1000','bootloader_dio_40m.bin','0x10000',file_path ,'0x8000','pion-kits-firmware.ino.partitions.bin']
                 if 'erase' in self._actions:
                     command_write.append('--erase-all')
                 # print(self.command + command_write)    
