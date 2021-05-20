@@ -1,1 +1,1 @@
-URL = "https://github.com/joaopedrovbs/Tiny-Uploader/blob/release/pion-kits-firmware.ino.bin"
+URL = "https://github.com/joaopedrovbs/Tiny-Uploader/raw/release/pion-kits-firmware.ino.bin"
