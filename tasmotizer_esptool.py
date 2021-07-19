@@ -255,6 +255,7 @@ class ESPLoader(object):
 
         """
         if isinstance(port, basestring):
+            print(port)
             self._port = serial.serial_for_url(port)
         else:
             self._port = port

@@ -47,23 +47,17 @@ class ESPWorker(QObject):
         esptool.sw.setContinueFlag(True)
 
         try:
-            if 'backup' in self._actions:
-                command_backup = ['read_flash', '0x00000', self._params['backup_size'],
-                                  'backup_{}.bin'.format(datetime.now().strftime('%Y%m%d_%H%M%S'))]
-                esptool.main(self.command + command_backup)
-
-                auto_reset = self._params['auto_reset']
-                if not auto_reset:
-                    self.wait_for_user()
-
             if esptool.sw.continueFlag() and 'write' in self._actions:
                 file_path = self._params['file_path']
-                command_write = ['--before','default_reset','--after','hard_reset','write_flash','-z','--flash_mode','dio','--flash_freq','40m','--flash_size','detect','0xe000','boot_app0.bin','0x1000','bootloader_dio_40m.bin','0x10000',file_path ,'0x8000','pion-kits-firmware.ino.partitions.bin']
+                file_pathBoot = self._params['file_pathBoot']
+                file_pathBootloader = self._params['file_pathBootloader']
+                file_pathPart = self._params['file_pathPart']
+                command_write = ['--before','default_reset','--after','hard_reset','write_flash','-z','--flash_mode','dio','--flash_freq','40m','--flash_size','detect','0xe000',file_pathBoot,'0x1000',file_pathBootloader,'0x10000',file_path ,'0x8000', file_pathPart]
                 if 'erase' in self._actions:
                     command_write.append('--erase-all')
                 esptool.main(self.command + command_write)
 
-        except (esptool.FatalError, serial.SerialException) as e:
+        except (esptool.FatalError) as e:
             self.error.emit(e)
         self.done.emit()
 
@@ -91,8 +85,20 @@ class ProcessDialog(QDialog):
         esptool.sw.progress.connect(self.update_progress)
 
         self.nam = QNetworkAccessManager()
-        self.nrBinFile = QNetworkRequest()
-        self.bin_data = b''
+        
+        self.nrDownloads = 0
+
+        self.nrBinFile1 = QNetworkRequest()
+        self.bin_data1 = b''
+        
+        self.nrBinFile2 = QNetworkRequest()
+        self.bin_data2 = b''
+
+        self.nrBinFile3 = QNetworkRequest()
+        self.bin_data3 = b''
+
+        self.nrBinFile4 = QNetworkRequest()
+        self.bin_data4 = b''
 
         self.setLayout(VLayout(5, 5))
         self.actions_layout = QFormLayout()
@@ -105,17 +111,13 @@ class ProcessDialog(QDialog):
 
         self.port = port
 
-        self.auto_reset = kwargs.get('auto_reset', False)
-
-        self.file_path = kwargs.get('file_path')
-        if self.file_path and self.file_path.startswith('http'):
-            self._actions.append('download')
-
-        self.backup = kwargs.get('backup')
-        if self.backup:
-            self._actions.append('backup')
-            self.backup_size = kwargs.get('backup_size')
-
+        self.file_path = kwargs.get('file_url')
+        self.file_pathBoot = kwargs.get('file_urlBoot')
+        self.file_pathBootloader = kwargs.get('file_urlBootloader')
+        self.file_pathPart = kwargs.get('file_urlPart')
+        
+        self._actions.append('download')
+        
         self.erase = kwargs.get('erase')
         if self.erase:
             self._actions.append('erase')
@@ -140,15 +142,59 @@ class ProcessDialog(QDialog):
         self.sb = QStatusBar()
         self.layout().addWidget(self.sb)
 
-    def appendBinFile(self):
-        self.bin_data += self.bin_reply.readAll()
+    def appendBinFile1(self):
+        self.bin_data1 += self.bin_reply1.readAll()
+    
+    def appendBinFile2(self):
+        self.bin_data2 += self.bin_reply2.readAll()
+    
+    def appendBinFile3(self):
+        self.bin_data3 += self.bin_reply3.readAll()
+    
+    def appendBinFile4(self):
+        self.bin_data4 += self.bin_reply4.readAll()
+    
+    def downloadsFinished(self):
+        if self.nrDownloads == 4:
+            self.run_esp()
 
-    def saveBinFile(self):
-        if self.bin_reply.error() == QNetworkReply.NoError:
+    def saveBinFile1(self):
+        if self.bin_reply1.error() == QNetworkReply.NoError:
             self.file_path = self.file_path.split('/')[-1]
             with open(self.file_path, 'wb') as f:
-                f.write(self.bin_data)
-            self.run_esp() 
+                f.write(self.bin_data1)
+            self.nrDownloads += 1
+            self.downloadsFinished()
+        else:
+            raise NetworkError
+
+    def saveBinFile2(self):
+        if self.bin_reply2.error() == QNetworkReply.NoError:
+            self.file_pathBoot = self.file_pathBoot.split('/')[-1]
+            with open(self.file_pathBoot, 'wb') as f:
+                f.write(self.bin_data2)
+            self.nrDownloads += 1
+            self.downloadsFinished()
+        else:
+            raise NetworkError
+
+    def saveBinFile3(self):
+        if self.bin_reply3.error() == QNetworkReply.NoError:
+            self.file_pathBootloader = self.file_pathBootloader.split('/')[-1]
+            with open(self.file_pathBootloader, 'wb') as f:
+                f.write(self.bin_data3)
+            self.nrDownloads += 1
+            self.downloadsFinished()
+        else:
+            raise NetworkError
+
+    def saveBinFile4(self):
+        if self.bin_reply4.error() == QNetworkReply.NoError:
+            self.file_pathPart = self.file_pathPart.split('/')[-1]
+            with open(self.file_pathPart, 'wb') as f:
+                f.write(self.bin_data4)
+            self.nrDownloads += 1
+            self.downloadsFinished()
         else:
             raise NetworkError
 
@@ -156,12 +202,30 @@ class ProcessDialog(QDialog):
         self._action_widgets['download'].setValue(recv//total*100)
 
     def download_bin(self):
-        self.nrBinFile.setAttribute(QNetworkRequest.FollowRedirectsAttribute, True)
-        self.nrBinFile.setUrl(QUrl(self.file_path))
-        self.bin_reply = self.nam.get(self.nrBinFile)
-        self.bin_reply.readyRead.connect(self.appendBinFile)
-        self.bin_reply.downloadProgress.connect(self.updateBinProgress)
-        self.bin_reply.finished.connect(self.saveBinFile)
+        self.nrBinFile1.setAttribute(QNetworkRequest.FollowRedirectsAttribute, True)
+        self.nrBinFile1.setUrl(QUrl(self.file_path))
+        self.bin_reply1 = self.nam.get(self.nrBinFile1)
+        self.bin_reply1.readyRead.connect(self.appendBinFile1)
+        self.bin_reply1.downloadProgress.connect(self.updateBinProgress)
+        self.bin_reply1.finished.connect(self.saveBinFile1)
+
+        self.nrBinFile2.setAttribute(QNetworkRequest.FollowRedirectsAttribute, True)
+        self.nrBinFile2.setUrl(QUrl(self.file_pathBoot))
+        self.bin_reply2 = self.nam.get(self.nrBinFile2)
+        self.bin_reply2.readyRead.connect(self.appendBinFile2)
+        self.bin_reply2.finished.connect(self.saveBinFile2)
+        
+        self.nrBinFile3.setAttribute(QNetworkRequest.FollowRedirectsAttribute, True)
+        self.nrBinFile3.setUrl(QUrl(self.file_pathBootloader))
+        self.bin_reply3 = self.nam.get(self.nrBinFile3)
+        self.bin_reply3.readyRead.connect(self.appendBinFile3)
+        self.bin_reply3.finished.connect(self.saveBinFile3)
+
+        self.nrBinFile4.setAttribute(QNetworkRequest.FollowRedirectsAttribute, True)
+        self.nrBinFile4.setUrl(QUrl(self.file_pathPart))
+        self.bin_reply4 = self.nam.get(self.nrBinFile4)
+        self.bin_reply4.readyRead.connect(self.appendBinFile4)
+        self.bin_reply4.finished.connect(self.saveBinFile4)
 
     def show_connection_state(self, state):
         self.sb.showMessage(state, 0)
@@ -169,13 +233,11 @@ class ProcessDialog(QDialog):
     def run_esp(self):
         params = {
             'file_path': self.file_path,
-            'auto_reset': self.auto_reset,
+            'file_pathBoot': self.file_pathBoot,
+            'file_pathBootloader': self.file_pathBootloader,
+            'file_pathPart': self.file_pathPart,
             'erase': self.erase
         }
-
-        if self.backup:
-            backup_size = f'0x{2 ** self.backup_size}00000'
-            params['backup_size'] = backup_size
 
         self.esp_thread = QThread()
         self.esp = ESPWorker(
@@ -184,7 +246,6 @@ class ProcessDialog(QDialog):
             **params
         )
         esptool.sw.connection_state.connect(self.show_connection_state)
-        self.esp.waiting.connect(self.wait_for_user)
         self.esp.done.connect(self.accept)
         self.esp.error.connect(self.error)
         self.esp.moveToThread(self.esp_thread)
@@ -202,17 +263,6 @@ class ProcessDialog(QDialog):
         self._action_widgets[action].setValue(value)
 
     @pyqtSlot()
-    def wait_for_user(self):
-        dlg = QMessageBox.information(self,
-                                      'User action required',
-                                      'Please power cycle the device, wait a moment and press OK',
-                                      QMessageBox.Ok | QMessageBox.Cancel)
-        if dlg == QMessageBox.Ok:
-            self.esp.continue_ok()
-        elif dlg == QMessageBox.Cancel:
-            self.esp.abort()
-            self.esp.continue_ok()
-            self.abort()
 
     def stop_thread(self):
         self.esp_thread.wait(2000)
@@ -254,16 +304,12 @@ class Tasmotizer(QDialog):
         self.mode = 0  # BIN file
         self.file_path = ''
 
-        self.release_data = b''
-        self.development_data = b''
-
         self.create_ui()
 
         self.refreshPorts()
-        # self.getFeeds()
 
     def create_ui(self):
-        vl = VLayout(5)
+        vl = VLayout(3)
         self.setLayout(vl)
 
         # Banner
@@ -280,81 +326,19 @@ class Tasmotizer(QDialog):
         gbPort.layout().setStretch(0, 4)
         gbPort.layout().setStretch(1, 1)
 
-        # Firmware groupbox
-        gbFW = GroupBoxV('Select image', 3)
-
-        hl_rb = HLayout(0)
-        rbFile = QRadioButton('BIN file')
-        self.rbRelease = QRadioButton('Release')
-        self.rbRelease.setEnabled(False)
-        self.rbDev = QRadioButton('Development')
-        self.rbDev.setEnabled(False)
-
-        self.rbgFW = QButtonGroup(gbFW)
-        self.rbgFW.addButton(rbFile, 0)
-        self.rbgFW.addButton(self.rbRelease, 1)
-        self.rbgFW.addButton(self.rbDev, 2)
-
-        hl_rb.addWidgets([rbFile, self.rbRelease, self.rbDev])
-        gbFW.addLayout(hl_rb)
-
-        self.wFile = QWidget()
-        hl_file = HLayout(0)
-        self.file = QLineEdit()
-        self.file.setReadOnly(True)
-        self.file.setPlaceholderText('Click "Open" to select the image')
-        pbFile = QPushButton('Open')
-        hl_file.addWidgets([self.file, pbFile])
-        self.wFile.setLayout(hl_file)
-
-        self.cbHackboxBin = QComboBox()
-        self.cbHackboxBin.setVisible(False)
-        self.cbHackboxBin.setEnabled(False)
-
-        self.cbSelfReset = QCheckBox('Self-resetting device (NodeMCU, Wemos)')
-        self.cbSelfReset.setToolTip('Check if your device has self-resetting capabilities supported by esptool')
-
-        gbBackup = GroupBoxV('Backup')
-        self.cbBackup = QCheckBox('Save original firmware')
-        self.cbBackup.setToolTip('Firmware backup is ESPECIALLY recommended when you flash a Sonoff, Tuya, Shelly etc. for the first time.\nWithout a backup you will not be able to restore the original functionality.')
-
-        self.cbxBackupSize = QComboBox()
-        self.cbxBackupSize.addItems([f'{2 ** s}MB' for s in range(5)])
-        self.cbxBackupSize.setEnabled(False)
-
-        hl_backup_size = HLayout(0)
-        hl_backup_size.addWidgets([QLabel('Flash size:'), self.cbxBackupSize])
-        hl_backup_size.setStretch(0, 3)
-        hl_backup_size.setStretch(1, 1)
-
-        gbBackup.addWidget(self.cbBackup)
-        gbBackup.addLayout(hl_backup_size)
-
-        self.cbErase = QCheckBox('Erase before flashing')
-        self.cbErase.setToolTip('Erasing previous firmware ensures all flash regions are clean for Tasmota, which prevents many unexpected issues.\nIf unsure, leave enabled.')
-        self.cbErase.setChecked(True)
-
-        gbFW.addWidgets([self.wFile, self.cbHackboxBin, self.cbSelfReset, self.cbErase])
-
         # Buttons
-        self.pbTasmotize = QPushButton('Gravar firmware!')
-        self.pbTasmotize.setFixedHeight(50)
-        self.pbTasmotize.setStyleSheet('background-color: #0D2556;')
+        self.flash = QPushButton('Gravar firmware!')
+        self.flash.setFixedHeight(60)
+        self.flash.setStyleSheet('background-color: #0D2556;')
 
         hl_btns = HLayout([50, 3, 50, 3])
-        hl_btns.addWidgets([self.pbTasmotize])
+        hl_btns.addWidgets([self.flash])
 
         vl.addWidgets([gbPort])
         vl.addLayout(hl_btns)
 
         pbRefreshPorts.clicked.connect(self.refreshPorts)
-        self.rbgFW.buttonClicked[int].connect(self.setBinMode)
-        rbFile.setChecked(True)
-        # pbFile.clicked.connect(self.openBinFile)
-
-        self.cbBackup.toggled.connect(self.cbxBackupSize.setEnabled)
-
-        self.pbTasmotize.clicked.connect(self.start_process)
+        self.flash.clicked.connect(self.start_process)
 
     def refreshPorts(self):
         self.cbxPort.clear()
@@ -363,76 +347,24 @@ class Tasmotizer(QDialog):
             port = QSerialPortInfo(p)
             self.cbxPort.addItem(port.portName(), port.systemLocation())
 
-    def setBinMode(self, radio):
-        self.mode = radio
-        self.wFile.setVisible(self.mode == 0)
-        self.cbHackboxBin.setVisible(self.mode > 0)
-
-        if self.mode == 1:
-            self.processReleaseInfo()
-        elif self.mode == 2:
-            self.processDevelopmentInfo()
-
-    # def getFeeds(self):
-        # self.release_reply = self.nam.get(self.nrRelease)
-        # self.release_reply.readyRead.connect(self.appendReleaseInfo)
-        #self.release_reply.finished.connect(lambda: self.rbRelease.setEnabled(True))
-
-        # self.development_reply = self.nam.get(self.nrDevelopment)
-        # self.development_reply.readyRead.connect(self.appendDevelopmentInfo)
-        #self.development_reply.finished.connect(lambda: self.rbDev.setEnabled(True))
-
-    def appendReleaseInfo(self):
-        self.release_data += self.release_reply.readAll()
-
-    def appendDevelopmentInfo(self):
-        self.development_data += self.development_reply.readAll()
-
-    def processReleaseInfo(self):
-        self.fill_bin_combo(self.release_data, self.rbRelease)
-
-    def processDevelopmentInfo(self):
-        self.fill_bin_combo(self.development_data, self.rbDev)
-
-    def fill_bin_combo(self, data, rb):
-        try:
-            reply = json.loads(str(data, 'utf8'))
-            version, bins = list(reply.items())[0]
-            version = version.replace('-', ' ').title()
-
-            rb.setText(version)
-            if len(bins) > 0:
-                self.cbHackboxBin.clear()
-                for img in bins:
-                    img['filesize'] //= 1024
-                    self.cbHackboxBin.addItem('{binary} [{filesize}kB]'.format(**img), '{otaurl}'.format(**img))
-                self.cbHackboxBin.setEnabled(True)
-        except json.JSONDecodeError as e:
-            self.setBinMode(0)
-            self.rbgFW.button(0).setChecked(True)
-            QMessageBox.critical(self, 'Error', f'Cannot load bin data:\n{e.msg}')
-
     def start_process(self):
         try:
             if self.mode == 0:
-                self.file_path = firmwareURL.URL
-                #if len(self.file.text()) > 0:
-                #    self.file_path = self.file.text()
-                #    self.settings.setValue('bin_file', self.file_path)
-                #else:
-                #    raise NoBinFile
-
-            elif self.mode in (1, 2):
-                self.file_path = self.cbHackboxBin.currentData()
+                self.file_url = firmwareURL.URL+firmwareURL.FIRMWARE
+                self.file_urlBoot = firmwareURL.URL+firmwareURL.BOOT
+                self.file_urlBootloader = firmwareURL.URL+firmwareURL.BOOTLOADER
+                self.file_urlPart = firmwareURL.URL+firmwareURL.PARTITIONS
 
             process_dlg = ProcessDialog(
                 self.cbxPort.currentData(),
-                file_path=self.file_path,
-                #backup=self.cbBackup.isChecked(),
+                file_url=self.file_url,
+                file_urlBoot=self.file_urlBoot,
+                file_urlBootloader=self.file_urlBootloader,
+                file_urlPart=self.file_urlPart,
                 backup=False,
-                backup_size=0,#self.cbxBackupSize.currentIndex(),
-                erase=True,#self.cbErase.isChecked(),
-                auto_reset=True#self.cbSelfReset.isChecked()
+                backup_size=0,
+                erase=True,
+                auto_reset=True
             )
             result = process_dlg.exec_()
             if result == QDialog.Accepted:
@@ -444,10 +376,8 @@ class Tasmotizer(QDialog):
                 else:
                     QMessageBox.critical(self, 'Processo Cancelado', 'O processo foi cancelado pelo usuário')
             
-        except NoBinFile:
-            QMessageBox.critical(self, 'Image path missing', 'Select a binary to write, or select a different mode.')
         except NetworkError as e:
-            QMessageBox.critical(self, 'Network error', e.message)
+            QMessageBox.critical(self, 'Erro de rede', e.message)
 
 
 def main():
@@ -455,10 +385,8 @@ def main():
     app.setAttribute(Qt.AA_DisableWindowContextHelpButton)
     app.setQuitOnLastWindowClosed(True)
     app.setStyle('Fusion')
-
     app.setPalette(dark_palette)
     app.setStyleSheet('QToolTip { color: #ffffff; background-color: #2a82da; border: 1px solid white; }')
-    app.setStyle('Fusion')
 
     mw = Tasmotizer()
     mw.show()
